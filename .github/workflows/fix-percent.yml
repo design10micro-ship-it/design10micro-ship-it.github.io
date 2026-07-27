@@ -1,0 +1,55 @@
+name: Fix percent question logic
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-percent.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch percentage questions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+
+          fractions = "const fractions=[];for(let d=2;d<=20;d++)for(let n=1;n<d;n++){let g=(a,b)=>b?g(b,a%b):a;if(g(n,d)===1)fractions.push({id:n+'-'+d,n,d,p:+(n/d*100).toFixed(1)})}"
+          fractions_fixed = fractions + "\nconst unitFractions=fractions.filter(x=>x.n===1);"
+
+          old_new_question = "function newPercent(mode=st.percent.mode,reset=false){clearTimeout(timer);let s=st.percent;if(reset)Object.assign(s,{total:0,correct:0,start:0,recent:[],deadline:mode==='exam'?Date.now()+300000:0});s.mode=mode;let f=pick(fractions,s.recent);s.recent=addRecent(s.recent,f.id);let kind=mode==='mix'?rnd(['b2f','f2b']):mode==='exam'?rnd(['b2f','f2b']):mode;s.q={...f,kind};s.answer='';s.status='idle';s.feedback='';examDone=false;renderPercent()}"
+          fixed_new_question = "function newPercent(mode=st.percent.mode,reset=false){clearTimeout(timer);let s=st.percent;if(reset)Object.assign(s,{total:0,correct:0,start:0,recent:[],deadline:mode==='exam'?Date.now()+300000:0});s.mode=mode;let kind=mode==='mix'?rnd(['b2f','f2b']):mode==='exam'?rnd(['b2f','f2b']):mode;let source=kind==='b2f'?unitFractions:fractions;let f=pick(source,s.recent);s.recent=addRecent(s.recent,f.id);s.q={...f,kind};s.answer='';s.status='idle';s.feedback='';examDone=false;renderPercent()}"
+
+          old_submit = "s.feedback=ok?'✓ 正确':'✕ 正确答案：'+(q.kind==='b2f'?q.d:q.p+'%');"
+          fixed_submit = "s.feedback=ok?'✓ 正确：'+(q.kind==='b2f'?'1/'+q.d+' = '+q.p+'%':q.n+'/'+q.d+' = '+q.p+'%'):'✕ 正确答案：'+(q.kind==='b2f'?'1/'+q.d:q.p+'%');"
+
+          old_hint = '<p class="hint">输入答案后按回车，或点击提交开始计时</p>'
+          fixed_hint = '<p class="hint">百化分只练习 1/n 型题目；输入答案后按回车提交</p>'
+
+          replacements = [
+              (fractions, fractions_fixed, 'unit fraction pool'),
+              (old_new_question, fixed_new_question, 'question selection'),
+              (old_submit, fixed_submit, 'answer feedback'),
+              (old_hint, fixed_hint, 'practice hint'),
+          ]
+
+          for old, new, name in replacements:
+              if old not in text:
+                  raise SystemExit(f'Could not find target: {name}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "修复百分练习题目与答案逻辑"
+          git push
